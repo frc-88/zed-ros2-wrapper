@@ -89,6 +89,9 @@ ZedCamera::ZedCamera(const rclcpp::NodeOptions& options)
     // Init services
     initServices();
 
+    // Init detectors
+    initDetector();
+
     // Start camera
     if (!startCamera()) {
         exit(EXIT_FAILURE);
@@ -258,13 +261,30 @@ void ZedCamera::initParameters()
     getMappingParams();
 
     // OD PARAMETERS
-    if (sl_tools::isObjDetAvailable(mCamUserModel))
+    if (sl_tools::isObjDetAvailable(mCamUserModel)) {
         getOdParams();
+        getYoloParams();
+    }
 
     // Dynamic parameters callback
     //set_on_parameters_set_callback(std::bind(&ZedCamera::callback_paramChange, this, _1)); // deprecated
     mParamChangeCallbackHandle = add_on_set_parameters_callback(std::bind(&ZedCamera::callback_paramChange, this, _1));
 }
+
+void ZedCamera::initDetector()
+{
+    if (!mYoloObjDetEnabled) {
+        return;
+    }
+    torch::DeviceType device_type;
+    if (torch::cuda::is_available()) {
+        device_type = torch::kCUDA;
+    } else {
+        device_type = torch::kCPU;
+    }
+    mDetector = new YoloDetector(mYoloModelPath, device_type, mYoloReportLoopTimes);
+}
+
 
 void ZedCamera::getDebugParams()
 {
@@ -1274,6 +1294,36 @@ void ZedCamera::getOdParams()
     RCLCPP_INFO(get_logger(),
         " * Obj. Det. QoS Durability: %s",
         sl_tools::qos2str(qos_durability).c_str());
+}
+
+void ZedCamera::getYoloParams()
+{
+    RCLCPP_INFO(get_logger(), "*** YOLO OBJECT DETECTION parameters ***");
+    if (mCamUserModel == sl::MODEL::ZED || mCamUserModel == sl::MODEL::ZED_M) {
+        RCLCPP_WARN(get_logger(),
+            "!!! YOLO OD parameters are not used with ZED and ZED Mini !!!");
+    }
+
+    getParam("yolo_object_detection.enabled", mYoloObjDetEnabled, mYoloObjDetEnabled);
+    RCLCPP_INFO_STREAM(
+        get_logger(),
+        " * YOLO Object Detection enabled: " << (mYoloObjDetEnabled ? "TRUE" : "FALSE"));
+    getParam("yolo_object_detection.confidence_threshold",
+        mYoloObjDetConfidence,
+        mYoloObjDetConfidence,
+        " * YOLO OD min. confidence: ");
+    getParam("yolo_object_detection.nms_iou_confidence_threshold",
+        mYoloObjDetNmsConfidence,
+        mYoloObjDetNmsConfidence,
+        " * YOLO OD NMS IOU min. confidence: ");
+    getParam("yolo_object_detection.model_path",
+        mYoloModelPath,
+        mYoloModelPath,
+        " * YOLO OD model path (torchscript): ");
+    getParam("yolo_object_detection.report_loop_times", mYoloReportLoopTimes, mYoloReportLoopTimes);
+    RCLCPP_INFO_STREAM(
+        get_logger(),
+        " * YOLO OD report loop times: " << (mYoloObjDetEnabled ? "TRUE" : "FALSE"));
 }
 
 rcl_interfaces::msg::SetParametersResult

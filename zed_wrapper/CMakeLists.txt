@@ -38,6 +38,8 @@ endif()
 # Dependencies
 find_package(ZED 3 REQUIRED)
 find_package(CUDA REQUIRED)
+find_package(Torch REQUIRED)
+find_package(OpenCV REQUIRED)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -56,6 +58,8 @@ add_custom_target(all_${PROJECT_NAME}_files SOURCES ${all_files})
 include_directories(
     ${CUDA_INCLUDE_DIRS}
     ${ZED_INCLUDE_DIRS}
+    ${TORCH_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/src    
 )
 

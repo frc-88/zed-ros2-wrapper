@@ -44,6 +44,16 @@ if ( CMAKE_SYSTEM_NAME2 MATCHES "aarch64" ) # Jetson TX
 endif()
 
 find_package(CUDA REQUIRED)
+find_package(OpenCV REQUIRED)
+
+find_package(Torch REQUIRED)
+if (Torch_FOUND)
+    message(STATUS "Torch library found!")
+    message(STATUS "    include path: ${TORCH_INCLUDE_DIRS}" \n)
+else ()
+    message(FATAL_ERROR "Could not locate Torch" \n)
+endif()
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 set(DEPENDENCIES
     rclcpp
@@ -98,9 +108,12 @@ add_custom_target(all_${PROJECT_NAME}_files SOURCES ${all_files})
 include_directories(
     ${CUDA_INCLUDE_DIRS}
     ${ZED_INCLUDE_DIRS}
+    ${TORCH_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src/zed_camera/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/yolo_detector/include
 )
 
 # create ament index resource which references the libraries in the binary dir
@@ -112,6 +125,8 @@ link_directories(${CUDA_LIBRARY_DIRS})
 set(ZED_LIBS
   ${ZED_LIBRARIES}
   ${CUDA_LIBRARIES}
+  ${TORCH_LIBRARIES}
+  ${OpenCV_LIBRARIES}
 )
 
 ###############################################################################
@@ -119,6 +134,11 @@ set(ZED_LIBS
 set(SL_TOOLS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/include/sl_tools.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/src/sl_tools.cpp
+)
+
+set(YOLO_DETECTOR
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/yolo_detector/include/yolo_detector.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/yolo_detector/src/yolo_detector.cpp
 )
 
 set(ZED_CAMERA_INC
@@ -134,6 +154,7 @@ set(ZED_CAMERA_SRC
 # Bin and Install
 
 add_library(zed_camera_component SHARED
+    ${YOLO_DETECTOR}
     ${SL_TOOLS}
     ${ZED_CAMERA_INC}
     ${ZED_CAMERA_SRC}
@@ -142,7 +163,7 @@ target_compile_definitions(zed_camera_component
     PRIVATE "COMPOSITION_BUILDING_DLL"
 )
 target_link_libraries(zed_camera_component
-  ${ZED_LIBS}
+    ${ZED_LIBS}
 )
 ament_target_dependencies(zed_camera_component
     ${DEPENDENCIES}
@@ -162,6 +183,7 @@ install(TARGETS zed_camera_component
 install(DIRECTORY 
     ${CMAKE_CURRENT_SOURCE_DIR}/src/zed_camera/include/
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/include/
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/yolo_detector/include/
     ${CMAKE_CURRENT_SOURCE_DIR}/src/include/
     DESTINATION include/${PROJECT_NAME}/
 )

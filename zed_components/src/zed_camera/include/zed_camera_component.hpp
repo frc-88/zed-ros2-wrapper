@@ -70,6 +70,8 @@
 #include <zed_interfaces/srv/set_pose.hpp>
 #include <zed_interfaces/srv/start_svo_rec.hpp>
 
+#include "yolo_detector.hpp"
+
 #define TIMEZERO_ROS rclcpp::Time(0, 0, RCL_ROS_TIME)
 #define TIMEZERO_SYS rclcpp::Time(0, 0, RCL_SYSTEM_TIME)
 
@@ -143,6 +145,7 @@ protected:
     // ----> Initialization functions
     void initParameters();
     void initServices();
+    void initDetector();
 
     void getDebugParams();
     void getGeneralParams();
@@ -152,6 +155,7 @@ protected:
     void getSensorsParams();
     void getMappingParams();
     void getOdParams();
+    void getYoloParams();
 
     void setTFCoordFrameNames();
     void initPublishers();
@@ -241,6 +245,7 @@ protected:
     void processPose();
 
     void processDetectedObjects(rclcpp::Time t);
+    void detectYoloObjects(rclcpp::Time t);
 
     bool setPose(float xt, float yt, float zt, float rr, float pr, float yr);
     void initTransforms();
@@ -337,6 +342,11 @@ private:
     bool mObjDetFruitsEnable = true;
     bool mObjDetSportEnable = true;
     bool mObjDetBodyFitting = false;
+    bool mYoloObjDetEnabled = false;
+    std::string mYoloModelPath = "";
+    float mYoloObjDetConfidence = 40.0f;
+    float mYoloObjDetNmsConfidence = 20.0f;
+    bool mYoloReportLoopTimes = false;
     sl::BODY_FORMAT mObjDetBodyFmt = sl::BODY_FORMAT::POSE_34;
     sl::DETECTION_MODEL mObjDetModel = sl::DETECTION_MODEL::HUMAN_BODY_FAST;
     sl::OBJECT_FILTERING_MODE mObjFilterMode = sl::OBJECT_FILTERING_MODE::NMS3D;
@@ -614,6 +624,10 @@ private:
     const std::string mSrvStopSvoRecName = "stop_svo_rec";
     const std::string mSrvToggleSvoPauseName = "toggle_svo_pause";
     // <---- Services names
+
+    // ----> YOLOv5 Detector
+    YoloDetector* mDetector;
+    // <---- YOLOv5 Detector
 };
 
 } // namespace stereolabs
