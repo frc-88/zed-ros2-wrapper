@@ -566,6 +566,7 @@ private:
     bool mMappingRunning = false;
     bool mObjDetRunning = false;
     bool mYoloObjRunning = false;
+    bool mYoloDetectorWarmedUp = false;
     // <---- Status Flags
 
     // ----> Positional Tracking

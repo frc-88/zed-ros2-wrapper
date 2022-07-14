@@ -1318,10 +1318,12 @@ void ZedCamera::getYoloParams()
         mYoloObjDetConfidence,
         mYoloObjDetConfidence,
         " * YOLO OD min. confidence: ");
+    mYoloObjDetConfidence /= 100.0f;
     getParam("yolo_object_detection.nms_iou_confidence_threshold",
         mYoloObjDetNmsConfidence,
         mYoloObjDetNmsConfidence,
         " * YOLO OD NMS IOU min. confidence: ");
+    mYoloObjDetNmsConfidence /= 100.0f;
     getParam("yolo_object_detection.model_path",
         mYoloModelPath,
         mYoloModelPath,
@@ -1329,7 +1331,7 @@ void ZedCamera::getYoloParams()
     getParam("yolo_object_detection.report_loop_times", mYoloReportLoopTimes, mYoloReportLoopTimes);
     RCLCPP_INFO_STREAM(
         get_logger(),
-        " * YOLO OD report loop times: " << (mYoloObjDetEnabled ? "TRUE" : "FALSE"));
+        " * YOLO OD report loop times: " << (mYoloReportLoopTimes ? "TRUE" : "FALSE"));
     getParam("yolo_object_detection.object_tracking_enabled", mYoloObjTracking,
         mYoloObjTracking);
     RCLCPP_INFO_STREAM(get_logger(), " * YOLO OD tracking: " << (mYoloObjTracking ? "TRUE" : "FALSE"));
@@ -2727,6 +2729,8 @@ bool ZedCamera::startCamera()
     mPcProcMean_sec = std::make_unique<sl_tools::SmartMean>(mCamGrabFrameRate);
     mObjDetPeriodMean_sec = std::make_unique<sl_tools::SmartMean>(mCamGrabFrameRate);
     mObjDetElabMean_sec = std::make_unique<sl_tools::SmartMean>(mCamGrabFrameRate);
+    mYoloObjPeriodMean_sec = std::make_unique<sl_tools::SmartMean>(mCamGrabFrameRate);
+    mYoloObjElabMean_sec = std::make_unique<sl_tools::SmartMean>(mCamGrabFrameRate);
     mImuPeriodMean_sec = std::make_unique<sl_tools::SmartMean>(mSensPubRate);
     mBaroPeriodMean_sec = std::make_unique<sl_tools::SmartMean>(mSensPubRate);
     mMagPeriodMean_sec = std::make_unique<sl_tools::SmartMean>(mSensPubRate);
@@ -3163,7 +3167,7 @@ bool ZedCamera::startYoloObjDetect()
     }
 
 
-    if (!mObjDetEnabled) {
+    if (!mYoloObjDetEnabled) {
         return false;
     }
 
@@ -3871,7 +3875,7 @@ void ZedCamera::threadFunc_zedGrab()
 
         if (!mDepthDisabled) {
             mYoloObjMutex.lock();
-            if (mObjDetRunning) {
+            if (mYoloObjRunning) {
                 detectYoloObjects(mFrameTimestamp);
             }
             mYoloObjMutex.unlock();
@@ -5297,7 +5301,7 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
         return;
     }
 
-    if (objdet_sub_count < 1) {
+    if (mYoloDetectorWarmedUp && objdet_sub_count < 1) {
         mYoloObjSubscribed = false;
         return;
     }
@@ -5316,23 +5320,27 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
         cv::Mat cvmat_left = sl_tools::slMat2cvMat(mat_left);
 
         auto result = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
+        mYoloDetectorWarmedUp = true;
         if (result.empty()) {
+            RCLCPP_INFO_STREAM(get_logger(), "no yolo results");
             return;
         }
 
         if (!detectionsToSlObjects(result, objects)) {
+            RCLCPP_INFO_STREAM(get_logger(), "failed to convert yolo to sl objects");
             return;
         }
     }
-
-    if (!objects.is_new) // Async object detection. Update data only if new
-    // detection is available
-    {
-        return;
+    else {
+        RCLCPP_INFO_STREAM(get_logger(), "failed to retrieve left image");
     }
 
-    RCLCPP_INFO_STREAM(get_logger(), "Detected " << objects.object_list.size()
-    << " objects");
+    // if (!objects.is_new) // Async object detection. Update data only if new detection is available
+    // {
+    //     return;
+    // }
+
+    // RCLCPP_INFO_STREAM(get_logger(), "Detected " << objects.object_list.size() << " objects");
 
     size_t objCount = objects.object_list.size();
 
@@ -5379,49 +5387,14 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
             &(data.dimensions[0]),
             3 * sizeof(float));
 
-        objMsg->objects[idx].body_format = static_cast<uint8_t>(mObjDetBodyFmt);
-
-        if (mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_ACCURATE ||
-#if ZED_SDK_MAJOR_VERSION == 3 && ZED_SDK_MINOR_VERSION >= 5
-            mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_MEDIUM ||
-#endif
-            mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_FAST) {
-            objMsg->objects[idx].skeleton_available = true;
-
-            if (data.head_bounding_box_2d.size() == 4) {
-                memcpy(&(objMsg->objects[idx].head_bounding_box_2d.corners[0]),
-                    &(data.head_bounding_box_2d[0]),
-                    8 * sizeof(unsigned int));
-            }
-            if (data.head_bounding_box.size() == 8) {
-                memcpy(&(objMsg->objects[idx].head_bounding_box_3d.corners[0]),
-                    &(data.head_bounding_box[0]),
-                    24 * sizeof(float));
-            }
-            memcpy(&(objMsg->objects[idx].head_position[0]),
-                &(data.head_position[0]),
-                3 * sizeof(float));
-
-            uint8_t kp_size = data.keypoint_2d.size();
-            if (kp_size == 18 || kp_size == 34) {
-
-                memcpy(&(objMsg->objects[idx].skeleton_2d.keypoints[0]),
-                    &(data.keypoint_2d[0]),
-                    2 * kp_size * sizeof(float));
-
-                memcpy(&(objMsg->objects[idx].skeleton_3d.keypoints[0]),
-                    &(data.keypoint[0]),
-                    3 * kp_size * sizeof(float));
-            }
-        } else {
-            objMsg->objects[idx].skeleton_available = false;
-        }
+        objMsg->objects[idx].body_format = static_cast<uint8_t>(sl::BODY_FORMAT::POSE_34);
+        objMsg->objects[idx].skeleton_available = false;
 
         // at the end of the loop
         idx++;
     }
 
-    mPubObjDet->publish(std::move(objMsg));
+    mYoloObjPub->publish(std::move(objMsg));
 
     // ----> Diagnostic information update
     mYoloObjElabMean_sec->addValue(elabTimer.toc());
@@ -5450,7 +5423,9 @@ bool ZedCamera::detectionsToSlObjects(const std::vector<std::vector<Detection>>&
     }
     mZed.ingestCustomBoxObjects(objects_in);
     sl::ERROR_CODE code = mZed.retrieveObjects(objects, objectTracker_parameters_rt);
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, "Code: %d, Num objects: %lu, %lu, %lu", code, objects.object_list.size(), objects_in.size(), detections[0].size());
+    if (code != sl::ERROR_CODE::SUCCESS) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 500, "Failed to retrieve yolo objects. Code: %d, Num objects: %lu, %lu, %lu", (int)code, objects.object_list.size(), objects_in.size(), detections[0].size());
+    }
     return code == sl::ERROR_CODE::SUCCESS;
 }
 
