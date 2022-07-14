@@ -1846,6 +1846,7 @@ ZedCamera::callback_paramChange(std::vector<rclcpp::Parameter> parameters)
             result.reason = param.get_name() + " correctly set.";
             return result;
         } else {
+            result.successful = true;
             result.reason = param.get_name() + " is not a dynamic parameter";
         }
     }
