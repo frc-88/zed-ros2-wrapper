@@ -17,6 +17,7 @@ def generate_launch_description():
 
     # Launch configuration variables
     svo_path = LaunchConfiguration('svo_path')
+    yolo_model_path = LaunchConfiguration('yolo_model_path')
 
     camera_name = LaunchConfiguration('camera_name')
     camera_model = LaunchConfiguration('camera_model')
@@ -88,6 +89,11 @@ def generate_launch_description():
         'svo_path',
         default_value='live', # 'live' used as patch for launch files not allowing empty strings as default parameters
         description='Path to an input SVO file. Note: overrides the parameter `general.svo_file` in `common.yaml`.')
+
+    declare_yolo_model_path_cmd = DeclareLaunchArgument(
+        'yolo_model_path',
+        default_value='',
+        description='Path to torchscript model file. Note: overrides the parameter `yolo_object_detection.model_path` in `common.yaml`.')
 
     declare_base_frame_cmd = DeclareLaunchArgument(
         'base_frame',
@@ -168,7 +174,8 @@ def generate_launch_description():
                  'general.camera_name': camera_name,
                  'general.camera_model': camera_model,
                  'general.svo_file': svo_path,
-                 'pos_tracking.base_frame': base_frame
+                 'pos_tracking.base_frame': base_frame,
+                 'yolo_object_detection.model_path': yolo_model_path,
             }
         ]
     )
@@ -184,6 +191,7 @@ def generate_launch_description():
     ld.add_action(declare_config_camera_path_cmd)
     ld.add_action(declare_xacro_path_cmd)
     ld.add_action(declare_svo_path_cmd)
+    ld.add_action(declare_yolo_model_path_cmd)
     ld.add_action(declare_base_frame_cmd)
     ld.add_action(declare_pos_x_cmd)
     ld.add_action(declare_pos_y_cmd)

@@ -50,6 +50,7 @@
 #include <sl/Camera.hpp>
 #include <string>
 #include <chrono>
+#include <opencv2/opencv.hpp>
 
 namespace sl_tools
 {
@@ -180,6 +181,10 @@ public:
 private:
   std::chrono::steady_clock::time_point mStartTime;
 };
+
+
+cv::Mat slMat2cvMat(sl::Mat& input);
+std::vector<sl::uint2> cvToSlBbox(const cv::Rect &bbox_in);
 
 }  // namespace sl_tools
 

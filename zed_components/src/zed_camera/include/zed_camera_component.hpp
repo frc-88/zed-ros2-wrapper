@@ -170,6 +170,8 @@ protected:
     void stop3dMapping();
     bool startObjDetect();
     void stopObjDetect();
+    bool startYoloObjDetect();
+    void stopYoloObjDetect();
     bool startSvoRecording(std::string& errMsg);
     void stopSvoRecording();
     // <---- Initialization functions
@@ -246,6 +248,7 @@ protected:
 
     void processDetectedObjects(rclcpp::Time t);
     void detectYoloObjects(rclcpp::Time t);
+    bool detectionsToSlObjects(const std::vector<std::vector<Detection>>& detections, sl::Objects& objects);
 
     bool setPose(float xt, float yt, float zt, float rr, float pr, float yr);
     void initTransforms();
@@ -276,6 +279,7 @@ private:
     std::string mPoseCovTopic;
     std::string mPointcloudFusedTopic;
     std::string mObjectDetTopic;
+    std::string mYoloObjTopic;
     std::string mOdomPathTopic;
     std::string mMapPathTopic;
     std::string mClickedPtTopic; // Clicked point
@@ -342,14 +346,17 @@ private:
     bool mObjDetFruitsEnable = true;
     bool mObjDetSportEnable = true;
     bool mObjDetBodyFitting = false;
+    sl::BODY_FORMAT mObjDetBodyFmt = sl::BODY_FORMAT::POSE_34;
+    sl::DETECTION_MODEL mObjDetModel = sl::DETECTION_MODEL::HUMAN_BODY_FAST;
+    sl::OBJECT_FILTERING_MODE mObjFilterMode = sl::OBJECT_FILTERING_MODE::NMS3D;
+
     bool mYoloObjDetEnabled = false;
+    bool mYoloObjTracking = true;
     std::string mYoloModelPath = "";
     float mYoloObjDetConfidence = 40.0f;
     float mYoloObjDetNmsConfidence = 20.0f;
     bool mYoloReportLoopTimes = false;
-    sl::BODY_FORMAT mObjDetBodyFmt = sl::BODY_FORMAT::POSE_34;
-    sl::DETECTION_MODEL mObjDetModel = sl::DETECTION_MODEL::HUMAN_BODY_FAST;
-    sl::OBJECT_FILTERING_MODE mObjFilterMode = sl::OBJECT_FILTERING_MODE::NMS3D;
+    sl::OBJECT_FILTERING_MODE mYoloObjFilterMode = sl::OBJECT_FILTERING_MODE::NMS3D;
     // QoS parameters
     // https://github.com/ros2/ros2/wiki/About-Quality-of-Service-Settings
     rclcpp::QoS mVideoQos;
@@ -358,6 +365,7 @@ private:
     rclcpp::QoS mPoseQos;
     rclcpp::QoS mMappingQos;
     rclcpp::QoS mObjDetQos;
+    rclcpp::QoS mYoloObjQos;
     rclcpp::QoS mClickedPtQos;
     // <---- Parameter variables
 
@@ -503,6 +511,7 @@ private:
     tempPub mPubTempR; //
     transfPub mPubCamImuTransf; //
     objPub mPubObjDet;
+    objPub mYoloObjPub;
     depthInfoPub mPubDepthInfo;
     planePub mPubPlane;
     markerPub mPubMarker;
@@ -533,6 +542,7 @@ private:
     std::mutex mDynParMutex;
     std::mutex mMappingMutex;
     std::mutex mObjDetMutex;
+    std::mutex mYoloObjMutex;
     std::condition_variable mPcDataReadyCondVar;
     bool mPcDataReady = false;
     std::condition_variable_any mRgbDepthDataRetrievedCondVar;
@@ -555,6 +565,7 @@ private:
     bool mResetOdom = false;
     bool mMappingRunning = false;
     bool mObjDetRunning = false;
+    bool mYoloObjRunning = false;
     // <---- Status Flags
 
     // ----> Positional Tracking
@@ -578,11 +589,14 @@ private:
     std::unique_ptr<sl_tools::SmartMean> mMagPeriodMean_sec;
     std::unique_ptr<sl_tools::SmartMean> mObjDetPeriodMean_sec;
     std::unique_ptr<sl_tools::SmartMean> mObjDetElabMean_sec;
+    std::unique_ptr<sl_tools::SmartMean> mYoloObjPeriodMean_sec;
+    std::unique_ptr<sl_tools::SmartMean> mYoloObjElabMean_sec;
     std::unique_ptr<sl_tools::SmartMean> mPubFusedCloudPeriodMean_sec;
     bool mImuPublishing = false;
     bool mMagPublishing = false;
     bool mBaroPublishing = false;
     bool mObjDetSubscribed = false;
+    bool mYoloObjSubscribed = false;
 
     diagnostic_updater::Updater mDiagUpdater; // Diagnostic Updater
 

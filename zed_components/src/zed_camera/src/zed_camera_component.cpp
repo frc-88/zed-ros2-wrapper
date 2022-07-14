@@ -55,6 +55,7 @@ ZedCamera::ZedCamera(const rclcpp::NodeOptions& options)
     , mPoseQos(1)
     , mMappingQos(1)
     , mObjDetQos(1)
+    , mYoloObjQos(1)
     , mClickedPtQos(1)
 {
     RCLCPP_INFO(get_logger(), "********************************");
@@ -105,6 +106,11 @@ ZedCamera::~ZedCamera()
     if (mObjDetRunning) {
         std::lock_guard<std::mutex> lock(mObjDetMutex);
         stopObjDetect();
+    }
+
+    if (mYoloObjRunning) {
+        std::lock_guard<std::mutex> lock(mYoloObjMutex);
+        stopYoloObjDetect();
     }
 
     if (mMappingRunning) {
@@ -1324,6 +1330,20 @@ void ZedCamera::getYoloParams()
     RCLCPP_INFO_STREAM(
         get_logger(),
         " * YOLO OD report loop times: " << (mYoloObjDetEnabled ? "TRUE" : "FALSE"));
+    getParam("yolo_object_detection.object_tracking_enabled", mYoloObjTracking,
+        mYoloObjTracking);
+    RCLCPP_INFO_STREAM(get_logger(), " * YOLO OD tracking: " << (mYoloObjTracking ? "TRUE" : "FALSE"));
+    int filtering_mode = static_cast<int>(mYoloObjFilterMode);
+    getParam("yolo_object_detection.filtering_mode", filtering_mode, filtering_mode);
+    mYoloObjFilterMode = static_cast<sl::OBJECT_FILTERING_MODE>(filtering_mode);
+    RCLCPP_INFO_STREAM(get_logger(),
+        " * YOLO Object Filtering mode: " << filtering_mode << " - "
+                                     << sl::toString(mYoloObjFilterMode).c_str());
+
+    if (mYoloObjDetEnabled && mObjDetEnabled) {
+        mObjDetEnabled = false;
+        RCLCPP_WARN_STREAM(get_logger(), " * YOLO OD is enabled. Disabling normal object detection");
+    }
 }
 
 rcl_interfaces::msg::SetParametersResult
@@ -2142,6 +2162,7 @@ void ZedCamera::initPublishers()
 
     std::string object_det_topic_root = "obj_det";
     mObjectDetTopic = mTopicRoot + object_det_topic_root + "/objects";
+    mYoloObjTopic = mTopicRoot + object_det_topic_root + "/yolo_objects";
 
     std::string confImgRoot = "confidence";
     std::string conf_map_topic_name = "confidence_map";
@@ -3132,6 +3153,82 @@ void ZedCamera::stopObjDetect()
     }
 }
 
+bool ZedCamera::startYoloObjDetect()
+{
+    if (mDepthDisabled) {
+        RCLCPP_WARN(get_logger(),
+            "Cannot start YOLO Object Detection if "
+            "`depth.quality` is set to `0` [NONE]");
+        return false;
+    }
+
+
+    if (!mObjDetEnabled) {
+        return false;
+    }
+
+    if (!mCamera2BaseTransfValid || !mSensor2CameraTransfValid || !mSensor2BaseTransfValid) {
+        RCLCPP_DEBUG(get_logger(),
+            "Tracking transforms not yet ready, YOLO OD starting postponed");
+        return false;
+    }
+
+    RCLCPP_INFO(get_logger(), "*** Starting YOLO Object Detection ***");
+
+    sl::ObjectDetectionParameters od_p;
+    od_p.enable_mask_output = false;
+    od_p.enable_tracking = mYoloObjTracking;
+    od_p.image_sync = true;
+    od_p.detection_model = sl::DETECTION_MODEL::CUSTOM_BOX_OBJECTS;
+    od_p.filtering_mode = mYoloObjFilterMode;
+    od_p.enable_body_fitting = false;
+    od_p.body_format = sl::BODY_FORMAT::POSE_34;
+
+    sl::ERROR_CODE objDetError
+        = mZed.enableObjectDetection(od_p);
+
+    if (objDetError != sl::ERROR_CODE::SUCCESS) {
+        RCLCPP_ERROR_STREAM(
+            get_logger(), "YOLO Object detection error: " << sl::toString(objDetError));
+
+        mYoloObjRunning = false;
+        return false;
+    }
+
+    if (!mYoloObjPub) {
+        mYoloObjPub = create_publisher<zed_interfaces::msg::ObjectsStamped>(
+            mYoloObjTopic, mYoloObjQos);
+        RCLCPP_INFO_STREAM(get_logger(),
+            "Advertised on topic " << mYoloObjPub->get_topic_name());
+    }
+
+    mYoloObjRunning = true;
+    return true;
+}
+
+void ZedCamera::stopYoloObjDetect()
+{
+    if (mYoloObjRunning) {
+        RCLCPP_INFO(get_logger(), "*** Stopping YOLO Object Detection ***");
+        mYoloObjRunning = false;
+        mYoloObjDetEnabled = false;
+        mZed.disableObjectDetection();
+
+        // ----> Send an empty message to indicate that no more objects are tracked
+        // (e.g clean Rviz2)
+        objDetMsgPtr objMsg = std::make_unique<zed_interfaces::msg::ObjectsStamped>();
+
+        objMsg->header.stamp = mFrameTimestamp;
+        objMsg->header.frame_id = mLeftCamFrameId;
+
+        objMsg->objects.clear();
+
+        mYoloObjPub->publish(std::move(objMsg));
+        // <---- Send an empty message to indicate that no more objects are tracked
+        // (e.g clean Rviz2)
+    }
+}
+
 bool ZedCamera::startSvoRecording(std::string& errMsg)
 {
     sl::RecordingParameters params;
@@ -3600,6 +3697,16 @@ void ZedCamera::threadFunc_zedGrab()
         }
         // ----> Check for Object Detection requirement
 
+        // ----> Check for YOLO Object Detection requirement
+        if (!mDepthDisabled) {
+            mYoloObjMutex.lock();
+            if (mYoloObjDetEnabled && !mYoloObjRunning) {
+                startYoloObjDetect();
+            }
+            mYoloObjMutex.unlock();
+        }
+        // ----> Check for YOLO Object Detection requirement
+
         // ----> Wait for RGB/Depth synchronization before grabbing
         std::unique_lock<std::timed_mutex> datalock(mCamDataMutex);
         while (!mRgbDepthDataRetrieved) { // loop to avoid spurious wakeups
@@ -3760,6 +3867,14 @@ void ZedCamera::threadFunc_zedGrab()
                 processDetectedObjects(mFrameTimestamp);
             }
             mObjDetMutex.unlock();
+        }
+
+        if (!mDepthDisabled) {
+            mYoloObjMutex.lock();
+            if (mObjDetRunning) {
+                detectYoloObjects(mFrameTimestamp);
+            }
+            mYoloObjMutex.unlock();
         }
 
         // Diagnostic statistics update
@@ -5165,6 +5280,180 @@ void ZedCamera::processDetectedObjects(rclcpp::Time t)
     // <---- Diagnostic information update
 }
 
+void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
+{
+    if (!mYoloObjDetEnabled) {
+        return;
+    }
+    size_t objdet_sub_count = 0;
+
+    try {
+        objdet_sub_count = count_subscribers(mYoloObjPub->get_topic_name());
+    } catch (...) {
+        rcutils_reset_error();
+        RCLCPP_DEBUG(
+            get_logger(),
+            "detectYoloObjects: Exception while counting subscribers");
+        return;
+    }
+
+    if (objdet_sub_count < 1) {
+        mYoloObjSubscribed = false;
+        return;
+    }
+
+    sl_tools::StopWatch elabTimer;
+    static sl_tools::StopWatch freqTimer;
+
+    mYoloObjSubscribed = true;
+
+    sl::ObjectDetectionRuntimeParameters objectTracker_parameters_rt;
+
+    static sl::Mat mat_left;
+    static sl::Objects objects;
+    if (mZed.retrieveImage(mat_left, sl::VIEW::LEFT, sl::MEM::CPU, mMatResolVideo) == sl::ERROR_CODE::SUCCESS)
+    {
+        cv::Mat cvmat_left = sl_tools::slMat2cvMat(mat_left);
+
+        auto result = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
+        if (result.empty()) {
+            return;
+        }
+
+        if (!detectionsToSlObjects(result, objects)) {
+            return;
+        }
+    }
+
+    if (!objects.is_new) // Async object detection. Update data only if new
+    // detection is available
+    {
+        return;
+    }
+
+    RCLCPP_INFO_STREAM(get_logger(), "Detected " << objects.object_list.size()
+    << " objects");
+
+    size_t objCount = objects.object_list.size();
+
+    objDetMsgPtr objMsg = std::make_unique<zed_interfaces::msg::ObjectsStamped>();
+
+    objMsg->header.stamp = timestamp;
+    objMsg->header.frame_id = mLeftCamFrameId;
+
+    objMsg->objects.resize(objCount);
+
+    size_t idx = 0;
+    for (auto data : objects.object_list) {
+        objMsg->objects[idx].label = sl::toString(data.label).c_str();
+        objMsg->objects[idx].sublabel = sl::toString(data.sublabel).c_str();
+        objMsg->objects[idx].label_id = data.id;
+        objMsg->objects[idx].confidence = data.confidence;
+
+        memcpy(&(objMsg->objects[idx].position[0]),
+            &(data.position[0]),
+            3 * sizeof(float));
+        memcpy(&(objMsg->objects[idx].position_covariance[0]),
+            &(data.position_covariance[0]),
+            6 * sizeof(float));
+        memcpy(&(objMsg->objects[idx].velocity[0]),
+            &(data.velocity[0]),
+            3 * sizeof(float));
+
+        objMsg->objects[idx].tracking_available = mYoloObjTracking;
+        objMsg->objects[idx].tracking_state = static_cast<int8_t>(data.tracking_state);
+        objMsg->objects[idx].action_state = static_cast<int8_t>(data.action_state);
+
+        if (data.bounding_box_2d.size() == 4) {
+            memcpy(&(objMsg->objects[idx].bounding_box_2d.corners[0]),
+                &(data.bounding_box_2d[0]),
+                8 * sizeof(unsigned int));
+        }
+        if (data.bounding_box.size() == 8) {
+            memcpy(&(objMsg->objects[idx].bounding_box_3d.corners[0]),
+                &(data.bounding_box[0]),
+                24 * sizeof(float));
+        }
+
+        memcpy(&(objMsg->objects[idx].dimensions_3d[0]),
+            &(data.dimensions[0]),
+            3 * sizeof(float));
+
+        objMsg->objects[idx].body_format = static_cast<uint8_t>(mObjDetBodyFmt);
+
+        if (mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_ACCURATE ||
+#if ZED_SDK_MAJOR_VERSION == 3 && ZED_SDK_MINOR_VERSION >= 5
+            mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_MEDIUM ||
+#endif
+            mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_FAST) {
+            objMsg->objects[idx].skeleton_available = true;
+
+            if (data.head_bounding_box_2d.size() == 4) {
+                memcpy(&(objMsg->objects[idx].head_bounding_box_2d.corners[0]),
+                    &(data.head_bounding_box_2d[0]),
+                    8 * sizeof(unsigned int));
+            }
+            if (data.head_bounding_box.size() == 8) {
+                memcpy(&(objMsg->objects[idx].head_bounding_box_3d.corners[0]),
+                    &(data.head_bounding_box[0]),
+                    24 * sizeof(float));
+            }
+            memcpy(&(objMsg->objects[idx].head_position[0]),
+                &(data.head_position[0]),
+                3 * sizeof(float));
+
+            uint8_t kp_size = data.keypoint_2d.size();
+            if (kp_size == 18 || kp_size == 34) {
+
+                memcpy(&(objMsg->objects[idx].skeleton_2d.keypoints[0]),
+                    &(data.keypoint_2d[0]),
+                    2 * kp_size * sizeof(float));
+
+                memcpy(&(objMsg->objects[idx].skeleton_3d.keypoints[0]),
+                    &(data.keypoint[0]),
+                    3 * kp_size * sizeof(float));
+            }
+        } else {
+            objMsg->objects[idx].skeleton_available = false;
+        }
+
+        // at the end of the loop
+        idx++;
+    }
+
+    mPubObjDet->publish(std::move(objMsg));
+
+    // ----> Diagnostic information update
+    mYoloObjElabMean_sec->addValue(elabTimer.toc());
+    mYoloObjPeriodMean_sec->addValue(freqTimer.toc());
+    freqTimer.tic();
+    // <---- Diagnostic information update
+}
+
+bool ZedCamera::detectionsToSlObjects(const std::vector<std::vector<Detection>>& detections, sl::Objects& objects)
+{
+    std::vector<sl::CustomBoxObjectData> objects_in;
+    sl::ObjectDetectionRuntimeParameters objectTracker_parameters_rt;
+    for (const auto& detection : detections[0]) {
+        const auto& box = detection.bbox;
+        float score = detection.score;
+        int class_idx = detection.class_idx;
+        sl::CustomBoxObjectData tmp;
+        // Fill the detections into the correct format
+        tmp.unique_object_id = sl::generate_unique_id();
+        tmp.probability = score;
+        tmp.label = class_idx;
+        tmp.bounding_box_2d = sl_tools::cvToSlBbox(box);
+        tmp.is_grounded = false;
+        // others are tracked in full 3D space                
+        objects_in.push_back(tmp);
+    }
+    mZed.ingestCustomBoxObjects(objects_in);
+    sl::ERROR_CODE code = mZed.retrieveObjects(objects, objectTracker_parameters_rt);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, "Code: %d, Num objects: %lu, %lu, %lu", code, objects.object_list.size(), objects_in.size(), detections[0].size());
+    return code == sl::ERROR_CODE::SUCCESS;
+}
+
 bool ZedCamera::isDepthRequired()
 {
     if (mDepthDisabled) {
@@ -5796,6 +6085,8 @@ void ZedCamera::callback_enableObjDet(
         return;
     }
 }
+
+// TODO: service callback for enable YOLO object detection
 
 void ZedCamera::callback_enableMapping(
     const std::shared_ptr<rmw_request_id_t> request_header,
