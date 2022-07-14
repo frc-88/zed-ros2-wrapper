@@ -5322,7 +5322,6 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
         auto result = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
         mYoloDetectorWarmedUp = true;
         if (result.empty()) {
-            RCLCPP_INFO_STREAM(get_logger(), "no yolo results");
             return;
         }
 
