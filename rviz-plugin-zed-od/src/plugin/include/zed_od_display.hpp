@@ -30,12 +30,13 @@
 #include <zed_interfaces/msg/objects_stamped.hpp>
 
 #include <rviz_common/message_filter_display.hpp>
+#include <rviz_common/display.hpp>
 #include <rviz_common/properties/bool_property.hpp>
 #include <rviz_common/properties/float_property.hpp>
 
-#include <OGRE/OgreVector3.h>
-#include <OGRE/OgreSceneNode.h>
-#include <OGRE/OgreSceneManager.h>
+#include <OgreManualObject.h>
+#include <OgreMaterialManager.h>
+#include <OgreTechnique.h>
 
 #include <map>
 
@@ -51,7 +52,7 @@ typedef std::shared_ptr<zed_interfaces::msg::Object> objMsgPtr;
 typedef std::shared_ptr<zed_interfaces::msg::ObjectsStamped> objDetMsgPtr;
 
 class ZedOdDisplay : public
-        rviz_common::MessageFilterDisplay<objDetMsgPtr> {
+        rviz_common::MessageFilterDisplay<zed_interfaces::msg::ObjectsStamped> {
     Q_OBJECT
 
 public:
@@ -62,8 +63,8 @@ public:
     void reset() override;
 
 private:
-    void processMessage(const objDetMsgPtr& msg);
-    void createOrUpdateObject(objMsgPtr obj);
+    void processMessage(zed_interfaces::msg::ObjectsStamped::ConstSharedPtr msg);
+    void createOrUpdateObject(zed_interfaces::msg::Object obj);
     void invalidateObjs();
     void removeNotValidObjs();
 

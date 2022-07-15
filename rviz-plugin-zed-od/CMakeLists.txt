@@ -15,6 +15,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 
 find_package(ament_cmake REQUIRED)
+find_package(pluginlib REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Test Concurrent)
 find_package(rclcpp REQUIRED)
 find_package(rviz_common REQUIRED)
@@ -68,7 +69,7 @@ set(dependencies
 ## library to be called ``${PROJECT_NAME}`` (which is
 ## "rviz_plugin_zed_od", and specify the list of source files we collected above
 ## in ``${SRC_FILES}`` and ``${INC_FILES}``.
-add_library(${PROJECT_NAME} 
+add_library(${PROJECT_NAME} SHARED
   ${SRC_FILES}
   ${INC_FILES}
 )
@@ -93,7 +94,7 @@ ament_target_dependencies(${PROJECT_NAME}
 ## library and names the actual file something like
 ## "librviz_plugin_zed_od.so", or whatever is appropriate for your
 ## particular OS.
-target_link_libraries(${PROJECT_NAME} ${QT_LIBRARIES} rviz_common::rviz_common)
+target_link_libraries(${PROJECT_NAME} rviz_common::rviz_common)
 
 # prevent pluginlib from using boost
 target_compile_definitions(${PROJECT_NAME} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
@@ -102,6 +103,9 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNC
 # which is appropriate when building the dll but not consuming it.
 # TODO: Make this specific to this project (not rviz default plugins)
 target_compile_definitions(${PROJECT_NAME} PRIVATE "RVIZ_DEFAULT_PLUGINS_BUILDING_LIBRARY")
+
+
+pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)
 
 ## Install rules
 
@@ -115,11 +119,11 @@ install(
 )
 
 install(
-  DIRECTORY include/
+  DIRECTORY src/plugin/include/
   DESTINATION include/
 )
 
-ament_export_include_directories(include)
+ament_export_include_directories(src/plugin/include)
 ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(
   Qt5

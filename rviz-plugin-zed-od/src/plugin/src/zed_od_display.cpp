@@ -114,7 +114,7 @@ void ZedOdDisplay::removeNotValidObjs()
   }
 }
 
-void ZedOdDisplay::processMessage(const objDetMsgPtr& msg)
+void ZedOdDisplay::processMessage(zed_interfaces::msg::ObjectsStamped::ConstSharedPtr msg)
 {
   Ogre::Vector3 position;
   Ogre::Quaternion orientation;
@@ -151,7 +151,7 @@ void ZedOdDisplay::processMessage(const objDetMsgPtr& msg)
   }
 }
 
-void ZedOdDisplay::createOrUpdateObject(objMsgPtr obj)
+void ZedOdDisplay::createOrUpdateObject(zed_interfaces::msg::Object obj)
 {
   int16_t id = obj.label_id;
   if (id == -1 && obj.tracking_available) // Not a valid ID?
@@ -265,4 +265,4 @@ void ZedOdDisplay::updateLabelScale()
 }  // namespace rviz_plugin_zed_od
 
 #include <pluginlib/class_list_macros.hpp>  // NOLINT
-PLUGINLIB_EXPORT_CLASS(rviz_plugin_zed_od::displays::ZedOdDisplay,rviz::Display)
+PLUGINLIB_EXPORT_CLASS(rviz_plugin_zed_od::displays::ZedOdDisplay,rviz_common::Display)

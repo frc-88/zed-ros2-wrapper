@@ -289,6 +289,10 @@ void ZedCamera::initDetector()
         device_type = torch::kCPU;
     }
     mDetector = new YoloDetector(mYoloModelPath, device_type, mYoloReportLoopTimes);
+    mYoloClassNames = YoloDetector::LoadNames(mYoloClassNamesPath);
+    if (mYoloClassNames.empty()) {
+        RCLCPP_ERROR(get_logger(), "Error loading class names from %s", mYoloClassNamesPath.c_str());
+    }
 }
 
 
@@ -306,7 +310,7 @@ void ZedCamera::getDebugParams()
             get_logger().get_name(), RCUTILS_LOG_SEVERITY_DEBUG);
 
         if (res != RCUTILS_RET_OK) {
-            RCLCPP_INFO(get_logger(), "Error setting DEBUG level fot logger");
+            RCLCPP_INFO(get_logger(), "Error setting DEBUG level for logger");
         } else {
             RCLCPP_INFO(get_logger(), "*** Debug Mode enabled ***");
         }
@@ -1326,7 +1330,11 @@ void ZedCamera::getYoloParams()
     getParam("yolo_object_detection.model_path",
         mYoloModelPath,
         mYoloModelPath,
-        " * YOLO OD model path (torchscript): ");
+        " * YOLO OD model path (.torchscript): ");
+    getParam("yolo_object_detection.class_names_path",
+        mYoloClassNamesPath,
+        mYoloClassNamesPath,
+        " * YOLO OD class names path (.names): ");
     getParam("yolo_object_detection.report_loop_times", mYoloReportLoopTimes, mYoloReportLoopTimes);
     RCLCPP_INFO_STREAM(
         get_logger(),
@@ -5314,17 +5322,18 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
 
     static sl::Mat mat_left;
     static sl::Objects objects;
+    static std::vector<std::vector<Detection>> detections;
     if (mZed.retrieveImage(mat_left, sl::VIEW::LEFT, sl::MEM::CPU, mMatResolVideo) == sl::ERROR_CODE::SUCCESS)
     {
         cv::Mat cvmat_left = sl_tools::slMat2cvMat(mat_left);
 
-        auto result = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
+        detections = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
         mYoloDetectorWarmedUp = true;
-        if (result.empty()) {
+        if (detections.empty()) {
             return;
         }
 
-        if (!detectionsToSlObjects(result, objects)) {
+        if (!detectionsToSlObjects(detections[0], objects)) {
             RCLCPP_INFO_STREAM(get_logger(), "failed to convert yolo to sl objects");
             return;
         }
@@ -5351,8 +5360,10 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
 
     size_t idx = 0;
     for (auto data : objects.object_list) {
-        objMsg->objects[idx].label = sl::toString(data.label).c_str();
-        objMsg->objects[idx].sublabel = sl::toString(data.sublabel).c_str();
+        int class_idx = detections[0][idx].class_idx;
+        std::string class_name = 0 <= class_idx && class_idx < mYoloClassNames.size() ? mYoloClassNames[class_idx] : "Unknown";
+        objMsg->objects[idx].label = class_name;
+        objMsg->objects[idx].sublabel = "";
         objMsg->objects[idx].label_id = data.id;
         objMsg->objects[idx].confidence = data.confidence;
 
@@ -5401,11 +5412,11 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
     // <---- Diagnostic information update
 }
 
-bool ZedCamera::detectionsToSlObjects(const std::vector<std::vector<Detection>>& detections, sl::Objects& objects)
+bool ZedCamera::detectionsToSlObjects(const std::vector<Detection>& detections, sl::Objects& objects)
 {
     std::vector<sl::CustomBoxObjectData> objects_in;
     sl::ObjectDetectionRuntimeParameters objectTracker_parameters_rt;
-    for (const auto& detection : detections[0]) {
+    for (const auto& detection : detections) {
         const auto& box = detection.bbox;
         float score = detection.score;
         int class_idx = detection.class_idx;
@@ -5422,7 +5433,7 @@ bool ZedCamera::detectionsToSlObjects(const std::vector<std::vector<Detection>>&
     mZed.ingestCustomBoxObjects(objects_in);
     sl::ERROR_CODE code = mZed.retrieveObjects(objects, objectTracker_parameters_rt);
     if (code != sl::ERROR_CODE::SUCCESS) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 500, "Failed to retrieve yolo objects. Code: %d, Num objects: %lu, %lu, %lu", (int)code, objects.object_list.size(), objects_in.size(), detections[0].size());
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 500, "Failed to retrieve yolo objects. Code: %d, Num objects: %lu, %lu, %lu", (int)code, objects.object_list.size(), objects_in.size(), detections.size());
     }
     return code == sl::ERROR_CODE::SUCCESS;
 }

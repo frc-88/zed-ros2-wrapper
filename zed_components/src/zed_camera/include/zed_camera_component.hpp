@@ -248,7 +248,7 @@ protected:
 
     void processDetectedObjects(rclcpp::Time t);
     void detectYoloObjects(rclcpp::Time t);
-    bool detectionsToSlObjects(const std::vector<std::vector<Detection>>& detections, sl::Objects& objects);
+    bool detectionsToSlObjects(const std::vector<Detection>& detections, sl::Objects& objects);
 
     bool setPose(float xt, float yt, float zt, float rr, float pr, float yr);
     void initTransforms();
@@ -353,6 +353,7 @@ private:
     bool mYoloObjDetEnabled = false;
     bool mYoloObjTracking = true;
     std::string mYoloModelPath = "";
+    std::string mYoloClassNamesPath = "";
     float mYoloObjDetConfidence = 40.0f;
     float mYoloObjDetNmsConfidence = 20.0f;
     bool mYoloReportLoopTimes = false;
@@ -642,6 +643,7 @@ private:
 
     // ----> YOLOv5 Detector
     YoloDetector* mDetector;
+    std::vector<std::string> mYoloClassNames;
     // <---- YOLOv5 Detector
 };
 
