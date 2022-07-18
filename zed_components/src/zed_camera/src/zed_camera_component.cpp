@@ -5330,6 +5330,9 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
             RCLCPP_INFO_STREAM(get_logger(), "YOLO detector is warming up. First object detection will take a few seconds.");
         }
         detections = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
+        if (!mYoloDetectorWarmedUp) {
+            RCLCPP_INFO_STREAM(get_logger(), "YOLO detector is warmed up");
+        }
         mYoloDetectorWarmedUp = true;
         if (detections.empty()) {
             return;
