@@ -5331,7 +5331,7 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
         }
         else {
             RCLCPP_INFO_STREAM(get_logger(), "YOLO detector is warming up. First object detection will take a few seconds.");
-            for (int count = 0; count < 2; count++) {
+            for (int count = 0; count < 2; count++) {  // At least two images need to go through detector before it runs at full speed
                 detections = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
             }
             RCLCPP_INFO_STREAM(get_logger(), "YOLO detector is warmed up");
@@ -5349,13 +5349,6 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
     else {
         RCLCPP_INFO_STREAM(get_logger(), "failed to retrieve left image");
     }
-
-    // if (!objects.is_new) // Async object detection. Update data only if new detection is available
-    // {
-    //     return;
-    // }
-
-    // RCLCPP_INFO_STREAM(get_logger(), "Detected " << objects.object_list.size() << " objects");
 
     size_t objCount = objects.object_list.size();
 
