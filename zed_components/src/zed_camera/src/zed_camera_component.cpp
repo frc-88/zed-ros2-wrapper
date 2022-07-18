@@ -5371,7 +5371,7 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
         int class_idx = detections[0][idx].class_idx;
         std::string class_name = 0 <= class_idx && class_idx < mYoloClassNames.size() ? mYoloClassNames[class_idx] : "Unknown";
         objMsg->objects[idx].label = class_name;
-        objMsg->objects[idx].sublabel = "";
+        objMsg->objects[idx].sublabel = std::to_string(class_idx);
         objMsg->objects[idx].label_id = data.id;
         objMsg->objects[idx].confidence = data.confidence;
 
