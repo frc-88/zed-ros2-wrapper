@@ -5326,11 +5326,14 @@ void ZedCamera::detectYoloObjects(rclcpp::Time timestamp)
     if (mZed.retrieveImage(mat_left, sl::VIEW::LEFT, sl::MEM::CPU, mMatResolVideo) == sl::ERROR_CODE::SUCCESS)
     {
         cv::Mat cvmat_left = sl_tools::slMat2cvMat(mat_left);
-        if (!mYoloDetectorWarmedUp) {
-            RCLCPP_INFO_STREAM(get_logger(), "YOLO detector is warming up. First object detection will take a few seconds.");
+        if (mYoloDetectorWarmedUp) {
+            detections = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);            
         }
-        detections = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
-        if (!mYoloDetectorWarmedUp) {
+        else {
+            RCLCPP_INFO_STREAM(get_logger(), "YOLO detector is warming up. First object detection will take a few seconds.");
+            for (int count = 0; count < 2; count++) {
+                detections = mDetector->Run(cvmat_left, mYoloObjDetConfidence, mYoloObjDetNmsConfidence);
+            }
             RCLCPP_INFO_STREAM(get_logger(), "YOLO detector is warmed up");
         }
         mYoloDetectorWarmedUp = true;
