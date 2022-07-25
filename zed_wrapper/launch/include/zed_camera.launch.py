@@ -35,6 +35,7 @@ def generate_launch_description():
     cam_roll = LaunchConfiguration('cam_roll')
     cam_pitch = LaunchConfiguration('cam_pitch')
     cam_yaw = LaunchConfiguration('cam_yaw')
+    respawn = LaunchConfiguration('respawn')
 
     publish_urdf = LaunchConfiguration('publish_urdf')
     xacro_path = LaunchConfiguration('xacro_path')
@@ -136,6 +137,11 @@ def generate_launch_description():
         default_value='0.0',
         description='Yaw orientation of the camera with respect to the base frame.')
 
+    declare_respawn_cmd = DeclareLaunchArgument(
+        'respawn',
+        default_value=False,
+        description='Whether to respawn node after exit')
+
     # Robot State Publisher node
     rsp_node = Node(
         condition=IfCondition(publish_urdf),
@@ -171,6 +177,7 @@ def generate_launch_description():
         executable='zed_wrapper',
         name=node_name,
         output='screen',
+        respawn=respawn,
         parameters=[
             # YAML files
             config_common_path,  # Common parameters
@@ -207,6 +214,7 @@ def generate_launch_description():
     ld.add_action(declare_roll_cmd)
     ld.add_action(declare_pitch_cmd)
     ld.add_action(declare_yaw_cmd)
+    ld.add_action(declare_respawn_cmd)
 
     ld.add_action(rsp_node)
     ld.add_action(zed_wrapper_node)
