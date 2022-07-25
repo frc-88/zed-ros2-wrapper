@@ -139,7 +139,7 @@ def generate_launch_description():
 
     declare_respawn_cmd = DeclareLaunchArgument(
         'respawn',
-        default_value=False,
+        default_value="false",
         description='Whether to respawn node after exit')
 
     # Robot State Publisher node
